@@ -10,6 +10,10 @@ public static class Program
     {
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
+        // "book" switches to the booking workflow (Assignment 6); anything else is the quote report.
+        if (args.Length > 0 && args[0].Equals("book", StringComparison.OrdinalIgnoreCase))
+            return RunBookings(args.Skip(1).ToArray());
+
         var inputPath = args.Length > 0 ? args[0] : "shipments.txt";
         var policyName = args.Length > 1 ? args[1].ToLowerInvariant() : "both";
 
@@ -66,6 +70,62 @@ public static class Program
                 Console.WriteLine($"  {q.ShipmentId,-4} {q.Customer,-10} {q.Price,8:0.##}");
             Console.WriteLine($"  Total           {summary.Total,8:0.##}   ({summary.Quotes.Length} quotes)");
         }
+
+        return 0;
+    }
+
+    // dotnet run -- book [shipments file] [actions file]
+    static int RunBookings(string[] args)
+    {
+        var shipmentsPath = args.Length > 0 ? args[0] : "shipments.txt";
+        var actionsPath = args.Length > 1 ? args[1] : "actions.txt";
+
+        foreach (var path in new[] { shipmentsPath, actionsPath })
+        {
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"Input file not found: {Path.GetFullPath(path)}");
+                return 1;
+            }
+        }
+
+        // I/O: read both files.
+        var shipmentLines = File.ReadAllLines(shipmentsPath);
+        var actionLines = File.ReadAllLines(actionsPath);
+
+        // Pure core: validated shipments -> open bookings -> every action applied in order.
+        var imported = Parsing.ParseLines(shipmentLines);
+        var start = Ledger.Open(imported.Shipments, MaxDistanceKm);
+        var (final, results) = Actions.Run(start, actionLines);
+
+        // I/O: show the finished results.
+        Console.WriteLine("Cold chain bookings");
+        Console.WriteLine($"Shipments: {shipmentsPath}   Actions: {actionsPath}   Max distance: {MaxDistanceKm} km");
+        Console.WriteLine($"Rejected shipment lines: {imported.Errors.Length}");
+        Console.WriteLine();
+        Console.WriteLine("Open bookings: " + (start.Bookings.Count == 0 ? "none" : string.Join(", ", start.Bookings.Keys)));
+
+        Console.WriteLine();
+        Console.WriteLine("Actions");
+        if (results.Length == 0)
+            Console.WriteLine("  none");
+        foreach (var result in results)
+        {
+            var (lineNumber, text) = result switch
+            {
+                ActionResult.Applied applied => (applied.LineNumber, applied.Text),
+                ActionResult.NotUnderstood notUnderstood => (notUnderstood.LineNumber, notUnderstood.Text),
+                _ => (0, "")
+            };
+            Console.WriteLine($"  line {lineNumber,-3} {text,-20} {Actions.Describe(result)}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Final bookings");
+        if (final.Bookings.Count == 0)
+            Console.WriteLine("  none");
+        foreach (var booking in final.Bookings.Values)
+            Console.WriteLine($"  {booking.Shipment.Id,-4} {Actions.DescribeState(booking)}");
 
         return 0;
     }

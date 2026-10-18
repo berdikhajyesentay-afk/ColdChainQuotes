@@ -17,6 +17,14 @@ public static class PricePolicies
         return 2000m + 80m * shipment.DistanceKm + 10m * shipment.WeightKg + Surcharge(shipment);
     }
 
+    // Finds one policy by its command word. null means no policy has that name.
+    public static (string Name, Func<Shipment, decimal> Price)? Find(string word) => word.ToLowerInvariant() switch
+    {
+        "standard" => ("Standard", Standard),
+        "express" => ("Express", Express),
+        _ => null
+    };
+
     static decimal Surcharge(Shipment shipment)
     {
         return shipment.StorageClass == StorageClass.Frozen ? FrozenSurcharge : 0m;

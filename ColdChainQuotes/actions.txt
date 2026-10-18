@@ -1,0 +1,9 @@
+# Booking actions: "price <id> <standard|express>" or "confirm <id>". Lines starting with # are skipped.
+price SH1 standard
+confirm SH1
+confirm SH1
+confirm SH2
+price SH4 express
+price SH3 express
+price SH3 standard
+cancel SH5

@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <None Include="..\ColdChainQuotes\shipments.txt" Link="shipments.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\ColdChainQuotes\actions.txt" Link="actions.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

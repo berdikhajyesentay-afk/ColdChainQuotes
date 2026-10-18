@@ -18,6 +18,8 @@ static class TestData
     public static ImportResult SuppliedShipments() =>
         Parsing.ParseLines(File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "shipments.txt")));
 
+    public static string[] SuppliedActions() =>
+        File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "actions.txt"));
 
     public static Ledger SampleLedger() => Ledger.Open(SuppliedShipments().Shipments, MaxDistanceKm);
 }
