@@ -1,0 +1,9 @@
+SH1|FreshFarm|Cold|60|20
+SH2|IceDream|Frozen|5|40
+SH3|GreenLeaf|Cold|8|300
+SH4|NorthFish|Frozen|12|350
+SH5|CityLab|Cold|2|0
+SH6|BadNumber|Cold|1,5|10
+SH7|Negative|Frozen|4|-5
+SH8||Cold|3|15
+SH9|WrongClass|Warm|3|15

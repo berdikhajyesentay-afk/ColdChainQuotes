@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ColdChainQuotes.Tests/ColdChainQuotes.Tests.csproj" />
+  <Project Path="ColdChainQuotes/ColdChainQuotes.csproj" />
+</Solution>
