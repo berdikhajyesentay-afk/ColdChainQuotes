@@ -11,7 +11,8 @@ public static class Parsing
     public static bool TryParseStorageClass(string text, out StorageClass storageClass)
     {
         // Enum.TryParse turns "Cold,Frozen" into Cold | Frozen, which equals the declared Frozen.
-        if (text.Contains(','))
+        // It also turns "1" into Frozen, so text that starts like a number is refused too.
+        if (text.Length == 0 || text.Contains(',') || char.IsDigit(text[0]) || text[0] is '+' or '-')
         {
             storageClass = default;
             return false;
@@ -66,25 +67,23 @@ public static class Parsing
         if (!TryReadNumber("weight", weightText, out var weightKg, out error))
             return false;
 
-        if (weightKg <= 0)
-        {
-            error = $"weight must be greater than 0 kg, found {weightKg}";
-            return false;
-        }
-
         if (!TryReadNumber("distance", distanceText, out var distanceKm, out error))
             return false;
 
-        // 0 km is a real value (pickup and delivery at the same site), so only negatives are rejected.
-        if (distanceKm < 0)
+        // The text is readable; the domain rules (weight range, distance range, ...) live in the factory.
+        switch (Shipment.Create(id, customer, storageClass, weightKg, distanceKm))
         {
-            error = $"distance cannot be negative, found {distanceKm}";
-            return false;
+            case ShipmentCheck.Valid valid:
+                shipment = valid.Shipment;
+                error = "";
+                return true;
+            case ShipmentCheck.Invalid invalid:
+                error = string.Join("; ", invalid.Reasons);
+                return false;
+            default:
+                error = "the shipment could not be validated";
+                return false;
         }
-
-        shipment = new Shipment(id, customer, storageClass, weightKg, distanceKm);
-        error = "";
-        return true;
     }
 
     // null means the input itself is missing, which is an error.

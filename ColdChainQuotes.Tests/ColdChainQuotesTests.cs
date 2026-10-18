@@ -11,7 +11,7 @@ public class ColdChainQuotesTests
     static ImportResult ImportSuppliedFile() => Parsing.ParseLines(File.ReadAllLines(SuppliedFile));
 
     static Shipment Ship(string id, StorageClass storageClass, decimal weightKg, decimal distanceKm) =>
-        new Shipment(id, "Customer " + id, storageClass, weightKg, distanceKm);
+        TestData.Ship(id, storageClass, weightKg, distanceKm);
 
     [Fact]
     public void SuppliedFileGivesFiveShipmentsAndFourRejectedLines()
