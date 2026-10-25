@@ -1,3 +1,223 @@
+# ColdChainQuotes Assignment 7
+
+**Group IT-2511:** Yesyentai Byerdikhajy, Estay, Byegarys.
+
+This is the same refrigerated-shipment quote project used in Assignments 5 and 6.
+Assignment 7 adds a real JSON-to-booking workflow with Result, Option, Map and Bind.
+It retains both the earlier quote pipeline and the safe Requested -> Quoted -> Confirmed transitions.
+Expected business failures are values. File and JSON exceptions are converted at the application boundary.
+
+## Build run and test
+
+Prerequisites: .NET SDK **10.0.401** (the version used for verification), or a compatible .NET 10 SDK.
+No additional runtime or database is needed. The first restore needs internet access to NuGet.org for xUnit,
+Microsoft.NET.Test.Sdk and coverlet. NuGet.Config contains only the public package source, no credentials.
+
+After extracting the ZIP, open a terminal in the **ColdChainQuotes** folder that contains
+ColdChainQuotes.slnx and README.md. Run:
+
+```text
+dotnet restore
+dotnet build --no-restore
+dotnet test --no-restore
+```
+
+All commands below start in that same solution folder. The --project option deliberately points to
+the nested application folder; sample paths are relative to the solution folder.
+
+```text
+# A7 normal workflow, all three domain errors, present and absent lookups
+dotnet run --no-restore --project ColdChainQuotes -- result ColdChainQuotes/samples/shipments.json
+
+# A7 single successful request; exit 0
+dotnet run --no-restore --project ColdChainQuotes -- result ColdChainQuotes/samples/shipments.json SH1 standard
+
+# A7 missing required booking; exit 1
+dotnet run --no-restore --project ColdChainQuotes -- result ColdChainQuotes/samples/shipments.json UNKNOWN standard
+
+# A7 unknown policy; exit 1
+dotnet run --no-restore --project ColdChainQuotes -- result ColdChainQuotes/samples/shipments.json SH1 unknown
+
+# A7 missing file; exit 1 (this file is deliberately absent)
+dotnet run --no-restore --project ColdChainQuotes -- result ColdChainQuotes/samples/missing.json
+
+# A7 malformed JSON; exit 1
+dotnet run --no-restore --project ColdChainQuotes -- result ColdChainQuotes/samples/malformed.json
+
+# A7 valid JSON with invalid domain data in the last row; exit 1
+dotnet run --no-restore --project ColdChainQuotes -- result ColdChainQuotes/samples/invalid-shipment.json
+
+# Earlier A5 pure pipeline remains active: totals 25500 and 38050
+dotnet run --no-restore --project ColdChainQuotes -- ColdChainQuotes/shipments.txt both
+
+# Earlier A6 safe booking transitions remain active
+dotnet run --no-restore --project ColdChainQuotes -- book ColdChainQuotes/shipments.txt ColdChainQuotes/actions.txt
+```
+
+For the default demonstration, the expected output is:
+
+```text
+Cold chain Result workflow
+SH5: present, distance 0 km
+UNKNOWN: missing
+SUCCESS SH1 confirmed as #1, 4400 (standard)
+ERROR [missing_booking] No open booking for 'UNKNOWN' (unknown or outside 300 km).
+ERROR [invalid_policy] Unknown policy 'unknown'; use standard or express.
+ERROR [state_rejected] SH1 is confirmed; its price can't change
+Original state: Requested; successful state: Confirmed
+```
+
+The demonstration deliberately runs both successful and rejected requests and exits 0 when its
+input loads. A single-request failure or a file-loading failure exits 1. There is no silent fallback.
+Malformed JSON output includes `malformed_data`, the input path and the parser's diagnostic;
+line numbers or wording may vary with the SDK. A missing file reports `file_missing` and the path.
+
+## Domain outcomes
+
+| Outcome | Trigger | Expected result |
+|---|---|---|
+| Success | SH1, standard, Requested state | Confirmed number 1, price 4400, next number 2 |
+| missing_booking | UNKNOWN or shipment over the 300 km service limit | Failure identifies the id; no policy or transition runs |
+| invalid_policy | SH1, unknown policy | Failure identifies the policy; booking remains Requested |
+| state_rejected | Price an already Quoted or Confirmed booking | Failure identifies the booking and state rule; old price and number remain |
+| invalid_shipment | JSON record with weight 0, invalid class, or another factory violation | Failure identifies file, row, shipment and broken rule; no new ledger is committed |
+| duplicate_id | JSON rows repeat an id ignoring case | Failure identifies the repeated id; entire import is rejected |
+
+`Result<T>` is a closed hierarchy with `Success(Value)` and `Failure(Error)`. The cases have
+get-only properties and private base construction. Only Success has a value; only Failure has an error.
+Null required payloads and null errors are rejected as programming mistakes, rather than constructing
+contradictory outcomes. A normal domain rejection never throws or depends on a catch.
+
+The earlier `ShipmentCheck` says whether input can create a valid Shipment. The earlier `Booking`
+case says which workflow state a valid shipment currently occupies. These represent different facts:
+a valid Requested shipment is not a validation failure just because confirmation needs a price first.
+`BookingStep` remains the safe transition model; ResultBookings adapts its rejected steps into
+structured errors without bypassing its rules.
+
+## Missing values
+
+`ResultBookings.Find` is a real lookup in the ledger's case-insensitive booking dictionary.
+It returns `Option<Booking>.Found` or `Missing`. Missing is not represented by a fabricated
+booking or by comparing a value with default(T). The booking workflow requires the item, so
+`ToResult` converts Missing into `missing_booking` before any dependent operation runs.
+
+SH5 is present with distance **0 km**. The earlier pipeline prices it at **1080** under Standard.
+Zero is legitimate data. `Some(0)`, `Some(false)` and `Some("")` are also present values, tested
+explicitly. Only the Missing case means absence. Production code uses no null-forgiving operator
+in the new Result workflow.
+
+## Result composition
+
+The real chain in `ResultBookings.Book` is:
+
+```text
+Find ledger id
+  -> Option.ToResult
+  -> Bind FindPolicy
+  -> Bind PriceAndConfirm
+       -> Ledger.Apply Price
+       -> Bind Ledger.Apply Confirm
+  -> Map immutable BookingReceipt
+```
+
+Map takes a pure `T -> U` transformation and returns `Result<U>`; here it creates the receipt
+and display text. Bind takes `T -> Result<U>` and continues a computation that may reject;
+it does not nest a Result inside a Result. Both copy the same error on failure without invoking
+the supplied function. `FailureSkipsMapAndBind` asserts that a counter remains zero and that
+the exact error object is preserved. `MissingBookingSkipsInvalidPolicy` shows that an absent
+booking wins even when the requested policy is also invalid.
+
+Success payloads are inspected only in a success pattern or success branch. ResultConsole handles
+each completed request once with explicit success/failure cases and a clear exit code. It neither
+prints inside pure domain methods nor turns a failure into an empty successful receipt.
+
+## Exception boundaries and consistent state
+
+`JsonBoundary.Load` reads and deserializes JSON at the application boundary. `FileNotFoundException`
+and `DirectoryNotFoundException` become `file_missing`; `JsonException` becomes `malformed_data`.
+Access and other I/O problems become `file_access` or `file_io`; invalid paths become `file_path`.
+Every error includes the operation and path. There is no empty catch, catch-all success or hidden fallback.
+Domain functions do not perform file I/O.
+
+The JSON root must be an array of records with all five fields. Missing numeric fields are rejected,
+so missing distance cannot silently become zero. Null records, wrong JSON types, and unknown fields
+are rejected. Storage classes must be named Cold or Frozen, not numeric enum strings. Empty `[]`
+is valid empty data; JSON `null` is not. Each row passes through the existing validated Shipment factory.
+
+Rows are collected locally; Ledger.Open runs only after every row validates and ids are unique.
+`JsonBoundary.Reload` returns the original ledger object for every failure. A bad later row cannot
+commit an earlier row. No stored file is changed by this application. ResultBookings likewise
+computes immutable intermediate ledgers and exposes a new ledger only on final success. Failed
+requests preserve every existing booking and the next confirmation number.
+
+## Requirement map
+
+| Requirement | Files and methods |
+|---|---|
+| Explicit success/failure and safe payload access | Outcomes.cs: Result<T>, Success, Failure |
+| At least three expected domain failures | ResultBookings.cs: Book, FindPolicy, Accept |
+| Real present and absent lookup | ResultBookings.Find; Option<T>.ToResult |
+| Valid zero and false retained | Outcomes.cs Option<T>; OutcomeTests.PrimitiveZeroAndFalseArePresent |
+| Map and Bind used in application | ResultBookings.Book and PriceAndConfirm |
+| Dependent operations skipped on failure | OutcomeTests.FailureSkipsMapAndBind and MissingBookingSkipsInvalidPolicy |
+| JSON file and parsing boundary | JsonBoundary.Load |
+| No partial import or failed state change | JsonBoundary.Reload; immutable Ledger.Apply; JsonBoundaryTests |
+| Final explicit outcome handling | ResultConsole.Run and Show; Program.Main result mode |
+| Earlier pipeline and transitions active | Stages.cs, Workflow.cs, Booking.cs; existing tests and commands above |
+| Normal and failure sample data | ColdChainQuotes/samples/*.json; earlier shipments.txt and actions.txt |
+
+## Automated tests
+
+Latest verified outcome: **81 passed, 0 failed, 0 skipped**, SDK 10.0.401.
+There are 54 cumulative tests from A5/A6 and 27 additional A7 cases (theory rows count as cases).
+Tests use xUnit assertions. File tests create unique temporary folders and delete them with IDisposable;
+they do not rely on a user's files. Earlier supplied data is copied into the test output by the test project.
+
+| File | Cases | Assertions and expected results |
+|---|---:|---|
+| OutcomeTests.cs | 11 | Map 4 -> 8; Bind preserves returned Result; failure counter stays 0; null payload protection; Some(0/false/empty); real present/absent lookup; SH1 price 4400 and confirmation 1; missing booking; invalid policy; rejected reprice; missing booking short-circuits policy |
+| JsonBoundaryTests.cs | 11 | Real JSON success; missing file; 5 malformed-content/schema cases; bad later row preserves state; duplicate id rejects file; successful reload; empty array |
+| ResultConsoleTests.cs | 5 | Demo success and 3 domain errors; missing and malformed file exit 1; Express price 4200; single domain failure exit 1 |
+| Earlier four test files | 54 | Existing factory rules, pure pipeline, policy totals, immutable state transitions and action parsing remain covered |
+
+## Member contribution scope for Assignment 7
+
+The division below continues the module responsibilities used in Assignment 6. Each member must
+review and understand their section and its assertions before the individual defense.
+
+| Member and group | Logic scope | Tests | Documentation and defense scope |
+|---|---|---|---|
+| Yesyentai Byerdikhajy, IT-2511 | ResultConsole.cs and Program.Main integration; final success/failure formatting and exit codes | ResultConsoleTests.cs (5) | Build/run instructions, expected output, application boundary demonstration |
+| Estay, IT-2511 | JsonBoundary.cs; strict JSON records, reuse of Shipment.Create, file exception conversion and atomic reload | JsonBoundaryTests.cs (11) | JSON input rules, operational errors and consistent-state explanation |
+| Byegarys, IT-2511 | Outcomes.cs and ResultBookings.cs; Result, Option, Map/Bind, real lookup and reuse of Ledger transitions | OutcomeTests.cs (11) | Domain failures, composition, missing values and skipped-operation proof |
+
+## Individual defense walkthrough
+
+1. Run the result demonstration and the malformed JSON command above.
+2. Open ResultBookings.Book and trace lookup -> ToResult -> Bind -> Map. Explain why Map wraps
+   a plain value while Bind receives an already fallible computation.
+3. Run `dotnet test --no-restore --filter FullyQualifiedName~FailureSkipsMapAndBind` and show
+   `Assert.Equal(0, calls)`; a failure must never execute those delegates.
+4. Explain why SH5 at 0 km exists and UNKNOWN does not; show the two Option cases.
+5. Show JsonBoundary.Load's catches and Reload's failure branch. Show the test that rejects a bad
+   final row and asserts the original ledger reference is unchanged.
+6. Practice a small change: add a named price policy to FindPolicy and test both its price and an
+   unknown policy; or add a JSON schema rejection and an assertion that no state is committed.
+
+## Repository and submission
+
+Project repository: https://github.com/berdikhajyesentay-afk/ColdChainQuotes
+The Git repository retains the project across assignments. The repository link does not replace
+this runnable ZIP for LMS submission. The ZIP includes source, solution and project files, tests,
+README and sample data. It excludes .git, bin, obj, IDE caches and credentials.
+
+---
+
+# Earlier assignment documentation
+
+The following A5/A6 sections are retained as historical documentation. Their test counts and
+latest-run statements refer to those stages; the current A7 count and commands are above.
+
 # ColdChainQuotes
 
 **Team (Group IT-2511):** Yesyentai Byerdikhajy, Estay, Byegarys
