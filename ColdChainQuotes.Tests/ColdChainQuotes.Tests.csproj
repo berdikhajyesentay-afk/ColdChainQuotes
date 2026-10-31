@@ -25,6 +25,9 @@
   <ItemGroup>
     <None Include="..\ColdChainQuotes\shipments.txt" Link="shipments.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\ColdChainQuotes\actions.txt" Link="actions.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\ColdChainQuotes\samples\shipments.csv" Link="samples\shipments.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\ColdChainQuotes\samples\header-only.csv" Link="samples\header-only.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\native\ccq_native.dll" Link="ccq_native.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

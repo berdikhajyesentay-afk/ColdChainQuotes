@@ -1,0 +1,7 @@
+id,customer,storageClass,weightKg,distanceKm
+SH1,FreshFarm,Cold,60,20
+SH2,IceDream,Frozen,5,40
+SH3,GreenLeaf,Cold,8,300
+SH4,NorthFish,Frozen,12,350
+SH5,CityLab,Cold,2,0
+SH6,FreshFarm,Frozen,10,100

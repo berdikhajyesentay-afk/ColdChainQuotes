@@ -21,5 +21,7 @@ static class TestData
     public static string[] SuppliedActions() =>
         File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "actions.txt"));
 
+    public static string SampleCsv => Path.Combine(AppContext.BaseDirectory, "samples", "shipments.csv");
+
     public static Ledger SampleLedger() => Ledger.Open(SuppliedShipments().Shipments, MaxDistanceKm);
 }
