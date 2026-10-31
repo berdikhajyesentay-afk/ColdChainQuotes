@@ -1,3 +1,267 @@
+# ColdChainQuotes Assignment 8
+
+**Group IT-2511:** Yesyentai Byerdikhajy, Bekarys, Estai. Responsibilities are proposed in
+"Member contribution scope" below and must be agreed by all three before the defense.
+
+Assignment 8 extends the same runnable project: extension methods, two LINQ reports on CSV data,
+a curried scoring function, lazy CSV streaming with explicit resource ownership, and a small C
+library called from C# through P/Invoke. The Assignment 5 quote report, the Assignment 6 booking
+transitions and the Assignment 7 Result and JSON modes are unchanged.
+
+## Build, run and test (Assignment 8)
+
+Prerequisites:
+
+| Item | Version used |
+|---|---|
+| .NET SDK | 10.0.401 (RID win-x64) |
+| C compiler | gcc 15.2.0, MSYS2 build, target x86_64-w64-mingw32 (`gcc -dumpmachine`) |
+| OS / architecture | Windows 11 Pro 10.0.26200, x64 |
+
+The native binary `native/ccq_native.dll` is committed, so the build and test commands work without
+gcc. A rebuild needs gcc on PATH (in this environment: `C:\msys64\mingw64\bin`).
+
+From the **ColdChainQuotes** folder that contains ColdChainQuotes.slnx:
+
+```text
+dotnet restore
+dotnet build --no-restore
+dotnet test --no-restore            # 129 tests: 81 from Assignments 5-7, 48 added in Assignment 8
+```
+
+Rebuilding the native library (run from the `native` folder, gcc on PATH):
+
+```text
+build.cmd
+```
+
+which runs `gcc -std=c11 -Wall -Wextra -O2 -shared -static-libgcc -o ccq_native.dll ccq_native.c`.
+Check the export and the imports with `objdump -p ccq_native.dll`: the export `ccq_distance_tier`
+must be undecorated, and the imports must be only KERNEL32.dll and msvcrt.dll.
+
+Demonstrations, run from the application folder `ColdChainQuotes/ColdChainQuotes`:
+
+```text
+dotnet run -- report                                  # both reports, native tier column
+dotnet run -- report samples/shipments.csv --export report.txt   # same lines written to a file
+dotnet run -- report samples/header-only.csv          # header only: ERROR [empty_dataset], exit 1
+dotnet run -- report samples/missing.csv              # missing file: ERROR [file_missing], exit 1
+```
+
+Expected output of `dotnet run -- report` (copied from a real run):
+
+```text
+Report 1: revenue by customer (Standard policy, served shipments up to 300 km)
+Customer     Shipments  WeightKg   Revenue
+GreenLeaf            1         8     16320
+FreshFarm            2        70     11300
+IceDream             1         5      3700
+CityLab              1         2      1080
+Total                5        85     32400
+
+Report 2a: cold-store priority, weight first (10 per kg + 1 per km)
+Rank Id    Customer     Tier          Score
+   1 SH1   FreshFarm    Local           620
+   2 SH3   GreenLeaf    LongHaul        380
+   3 SH5   CityLab      Local            20
+
+Report 2b: cold-store priority, distance first (1 per kg + 10 per km)
+Rank Id    Customer     Tier          Score
+   1 SH3   GreenLeaf    LongHaul       3008
+   2 SH1   FreshFarm    Local           260
+   3 SH5   CityLab      Local             2
+```
+
+## Input data
+
+`samples/shipments.csv` (header `id,customer,storageClass,weightKg,distanceKm`) holds six shipments:
+SH1 FreshFarm Cold 60 kg 20 km; SH2 IceDream Frozen 5 kg 40 km; SH3 GreenLeaf Cold 8 kg 300 km;
+SH4 NorthFish Frozen 12 kg 350 km (not served); SH5 CityLab Cold 2 kg 0 km; SH6 FreshFarm Frozen 10 kg 100 km.
+`samples/header-only.csv` is the valid empty dataset. Commas inside names are not supported.
+
+## Task 1: custom extension methods
+
+| Extension | Receiver type | Returns | Expected behaviour | Used in |
+|---|---|---|---|---|
+| `ByStorageClass(StorageClass)` | `IEnumerable<Shipment>` | `IEnumerable<Shipment>` | keeps only shipments of one storage class, in input order; empty for no match | `Reports.ColdPriority` |
+| `Require(Func<T,bool>, AppError)` | `Result<T>` | `Result<T>` | a success that fails the rule becomes the given failure; a failure passes through and the rule is never evaluated | `ReportConsole.Run` (empty dataset) |
+
+Why these belong on their receivers: `ByStorageClass` is a query over any sequence of shipments, so it
+reads as part of the sequence and can be chained in any report. `Require` composes Result values in the
+same style as `Map` and `Bind`; the rule is an extra domain check on a value that already succeeded.
+Neither extension changes shared state.
+
+## Task 2: two LINQ reports
+
+**Report 1: revenue by customer (dispatch planning).** Intended user: a dispatcher reviewing revenue per customer.
+Input: `samples/shipments.csv`. Filter: distance up to 300 km (`Stages.IsServiceable`). Stages: `Where`,
+`GroupBy(customer, ordinal ignore case)`, `Select` with `Count`, `Sum` of weight and `Sum` of the Standard price,
+`OrderByDescending(revenue)`, `ThenBy(customer, ordinal)`. Output fields: Customer, Shipments, WeightKg, Revenue,
+then a Total row. Expected: GreenLeaf 1 / 8 / 16320; FreshFarm 2 / 70 / 11300 (SH1 4400 plus SH6 6900);
+IceDream 1 / 5 / 3700; CityLab 1 / 2 / 1080; Total 5 / 85 / 32400.
+
+**Report 2: cold-store dispatch priority (cold-store team).** Intended user: a cold-store dispatcher ranking Cold
+shipments. Input: the same file. Filters: `ByStorageClass(Cold)` and distance up to 300 km. Stages: `Where`,
+`Select` to a (shipment, score) pair using the configured function, `OrderByDescending(score)`,
+`ThenBy(id, ordinal)`, then `Select` with the rank. Output fields: Rank, Id, Customer, Tier (native), Score.
+Expected: see the two tables above. Two configurations give different order on the same data.
+
+Edge cases in the tests: empty dataset, no matching records, equal revenue ordered by customer name, equal scores
+ordered by id, invalid rows (weight 0, numeric storage class, duplicate id, malformed text, wrong header).
+
+Calculations (`Reports`, `Stages`) are pure. Text rendering, native lookup and file output are in `ReportConsole`
+and `ReportExport`.
+
+## Task 3: curried configuration
+
+`Scoring.CreateScore : decimal -> decimal -> (Shipment -> decimal)` is written as nested lambdas, so each call fixes
+one configuration value:
+
+```csharp
+var weightFirst    = Scoring.CreateScore(10m)(1m);   // 10 per kg + 1 per km
+var distanceFirst  = Scoring.CreateScore(1m)(10m);   // 1 per kg + 10 per km
+```
+
+On SH1 (60 kg, 20 km) the results are 620 and 260, so the order changes: SH1 is first with weight first, and SH3 is
+first with distance first. Both functions are passed into `Reports.ColdPriority` as arguments. No mutable setting
+switches configurations.
+
+## Task 4: deferred execution
+
+`CsvBoundary.StreamRows(Func<TextReader> open)` is a `yield return` workflow. Each `MoveNext` reads one line
+and yields one validated `Result<Shipment>`.
+
+- Creating the sequence opens nothing (`CreatingTheSequenceRunsNoProcessing`).
+- Iteration opens the file once and parses rows as they are requested (`IterationOpensOnceAndDisposesWhenFinished`).
+- Before materialisation, each enumeration reads the file again: two `Count()` calls open it twice
+  (`RepeatedEnumerationReadsAgainUntilTheSnapshotIsMaterialised`).
+- `Load` materialises once with `ToArray()` into an immutable `ImmutableArray<Shipment>`. Later reuse reads nothing.
+  The probe counters live only in the tests; the production path has no diagnostic side effects.
+
+## Task 5: resource ownership and release
+
+| Resource | Created in | Owner | Released when |
+|---|---|---|---|
+| `StreamReader` from `File.OpenText` | `CsvBoundary.Load` (production opener) | the iterator in `StreamRows` (`using var`) | iteration ends, throws, or stops early (enumerator disposal) |
+| `StreamWriter` | `ReportExport.Write` | `using` block in `Write` | after writing, before the temporary file is moved; also on failure |
+
+Convenience APIs: `File.OpenText` opens the stream that `StreamRows` owns; `File.Move` replaces the target without
+keeping a handle. Tests assert disposal after success (`IterationOpensOnce...`), early stop (`StoppingEarlyStill...`)
+and a read failure (`AReadFailureDisposes...`). `ExportToAMissingFolder...` asserts that no temporary file remains.
+
+## Task 6: resource note
+
+- **Where data is materialised:** `CsvBoundary.Load` (one `ToArray()`), `Reports` (`ToList()` for each report),
+  and `ReportConsole.Render` (one `ToArray()` shared by both reports).
+- **Retention:** the deferred `StreamRows` sequence holds the open reader only while iterating. A materialised
+  snapshot holds the shipments, which are needed for the run. The report queries capture only `maxDistanceKm`
+  and a policy function (`PricePolicies.Standard` is a static method, so it retains no data).
+- **Long-lived collections:** none. There are no caches, no static collections and no event subscriptions.
+  Dictionaries and lists are local to one call.
+- **Design decision:** the file is read once per run into an immutable snapshot, and every report uses that same
+  array. No lazy query re-reads the file, and no report can see a half-read file.
+- **Trade-off:** streaming keeps only one row in memory and fails part-way through, but it re-reads on each
+  enumeration. A snapshot uses memory for all rows, but it is stable and safe to reuse. For these small files the
+  snapshot is the better choice.
+- **Not claimed:** no memory leak was found or fixed. Nothing has been profiled, and no manual collection is used.
+
+## Task 7: native C function contract
+
+| Item | Value |
+|---|---|
+| Source | `native/ccq_native.c` |
+| Export | `int32_t ccq_distance_tier(int32_t distance_km)`, cdecl, undecorated (`objdump -p`) |
+| Input | whole kilometres, valid range 0 to 300 |
+| Output | 0 Local (0-50 km), 1 Regional (51-150 km), 2 LongHaul (151-300 km) |
+| Invalid input | the C function returns -1 for values outside 0 to 300; the C# adapter refuses non-whole or out-of-range values before the call (`invalid_distance`) |
+| Native memory | none; no handles, no allocation, no ownership to release |
+| Money | not calculated in C; all money stays in `decimal` in C# |
+| Manual examples | 20 km gives 0 (SH1); 100 km gives 1 (SH6); 300 km gives 2 (SH3, exactly the limit); 0 km gives 0 (SH5) |
+
+## Task 8: build, binding and adapter
+
+- **Target:** win-x64 shared library `ccq_native.dll`, built with gcc 15.2.0 (MSYS2, x86_64-w64-mingw32),
+  `-static-libgcc`. `objdump -p` shows only KERNEL32.dll and msvcrt.dll as imports.
+- **Binary location:** `native/ccq_native.dll`. Both project files copy it to the output folder with
+  `CopyToOutputDirectory`, so `DllImport("ccq_native")` resolves it after a clean build.
+- **Binding:** `[DllImport("ccq_native", EntryPoint = "ccq_distance_tier", CallingConvention = CallingConvention.Cdecl)]`
+  in `NativeTier.cs`. No unsafe code and no extra project setting is needed.
+- **Adapter:** `NativeTier.Classify` validates the domain value, calls the native function, maps 0/1/2 to
+  `DistanceTier`, and converts `DllNotFoundException` and `BadImageFormatException` to `native_load_failed`,
+  `EntryPointNotFoundException` to `native_binding_failed`, and -1 to `native_rejected`.
+- **Use in a workflow:** `ReportConsole` adds the Tier column to Report 2 for every row. The call is made at the
+  boundary, not inside the pure `Reports.ColdPriority` query.
+
+## Task 9: reproducible build, tests and difficulty
+
+- **Procedure:** see "Build, run and test (Assignment 8)" above. The binary is committed, so a clean extraction
+  runs without gcc.
+- **Real native call test:** `NativeTierTests.TheRealNativeCallReturnsTheHandCalculatedTier` (8 rows) calls the
+  DLL and compares with the manually calculated tiers.
+- **Failure tests:** `AMissingLibraryBecomesALoadFailure`, `ALibraryOfTheWrongArchitectureBecomesALoadFailure`,
+  `AMissingEntryPointBecomesABindingFailure` and `ANativeRejectionIsReportedWithItsOwnCode`. These use the injectable
+  call of `NativeTier.Classify` because a DLL that is already loaded cannot be unloaded inside the test process.
+  A fresh-load failure in an isolated process was not run.
+- **Difficulties met and how they were resolved:**
+  1. The test project could not find the sample CSV: the relative path in the project file had one folder too many
+     (MSB3030 "could not copy"). Fixed by pointing at the application folder as the other sample copies do.
+  2. `build.cmd` needs gcc on PATH. gcc is installed in MSYS2 (`C:\msys64\mingw64\bin`) and is not on the Windows
+     PATH by default. The build was run with that folder added to PATH.
+
+## Task 9 and integration: requirement map
+
+| Requirement | Files and methods |
+|---|---|
+| Extensions used in application code | `Queries.cs` (`ShipmentQueries.ByStorageClass`, `ResultRules.Require`); used in `Reports.ColdPriority` and `ReportConsole.Run` |
+| LINQ reports | `Reports.RevenueByCustomer`, `Reports.ColdPriority`, `ReportConsole.Render` |
+| Curried function and partial application | `Scoring.CreateScore` (Scoring.cs) |
+| Deferred execution and materialisation | `CsvBoundary.StreamRows`, `CsvBoundary.Materialise`, `CsvBoundary.Load` (CsvBoundary.cs) |
+| Resource ownership and disposal | `CsvBoundary.StreamRows` (reader), `ReportExport.Write` (writer and temporary file) |
+| CSV and file boundary | `CsvBoundary.ParseRow`, `CsvBoundary.Materialise` (missing, malformed, duplicate, invalid rows) |
+| Native library and binding | `native/ccq_native.c`, `native/build.cmd`, `native/ccq_native.dll`, `NativeTier.cs` |
+| Native adapter failures as Result | `NativeTier.Classify` |
+| Integration in the application | `Program.Main` (`report` mode) and `ReportConsole.Run` |
+| Calculations separate from I/O | `Reports`, `Stages`, `Queries.cs` are pure; `ReportConsole`, `ReportExport`, `NativeTier` are at the boundary |
+
+## Automated tests (Assignment 8)
+
+48 test cases were added (theory rows counted); the full suite has 129 tests and passes.
+
+| Area | Test (file) | Covers |
+|---|---|---|
+| Extensions | `ByStorageClassKeepsMatchingShipmentsInInputOrder`, `ByStorageClassReturnsEmptyForEmptyInputOrNoMatch` (QueryTests) | extension results, empty, no match |
+| Extensions | `RequireKeepsASuccessThatPassesTheRule`, `RequireTurnsAFailingRuleIntoTheGivenFailure`, `RequirePassesAnUpstreamFailureThroughWithoutEvaluatingTheRule` (QueryTests) | success, rule failure, failure passthrough |
+| Reports | `RevenueByCustomerGroupsTotalsAndOrdersByRevenue`, `RevenueByCustomerForAnEmptyDatasetIsEmpty`, `RevenueByCustomerWithNoServedShipmentsIsEmpty`, `EqualRevenueIsOrderedByCustomerNameWhateverTheInputOrder` (ReportTests) | normal result, empty, no match, ties, grouping and totals |
+| Configured functions | `ColdPriorityRanksWithTheWeightFirstConfiguration`, `ColdPriorityRanksWithTheDistanceFirstConfigurationAndTheResultDiffers`, `TheTwoPartialApplicationsGiveDifferentScoresForTheSameShipment`, `EqualScoresAreOrderedByShipmentId`, `ColdPriorityOnEmptyOrNoColdServedShipmentsIsEmpty` (ReportTests) | both partial applications on the same input, documented difference, ties, empty |
+| Deferred execution | `CreatingTheSequenceRunsNoProcessing`, `IterationOpensOnceAndDisposesWhenFinished`, `RepeatedEnumerationReadsAgainUntilTheSnapshotIsMaterialised` (CsvBoundaryTests) | no early work, processing during iteration, materialised snapshot reuse |
+| Resource lifetime | `StoppingEarlyStillDisposesTheReader`, `AReadFailureDisposesTheReaderAndIsReportedAsAFileFailure` (CsvBoundaryTests); `ExportToAMissingFolderFailsWithoutLeavingATemporaryFile` (ReportTests) | early stop, failure, no temporary file left |
+| File boundaries | `AMissingFileIsASafeFailureAndCreatesNothing`, `MalformedContentIsAControlledFailure` (6 rows), `AHeaderOnlyFileIsAValidEmptyDataset`, `TheSampleCsvLoadsSixShipmentsInFileOrder` (CsvBoundaryTests) | missing, malformed, duplicate, invalid rows; valid empty; normal load |
+| Complete workflows | `ConsoleRunWritesBothReportsAndTheNativeTierOnTheSample`, `ConsoleRunExportsExactlyTheRenderedLinesToAFile`, `AMissingInputFileReturnsAnExplicitErrorAndExportsNothing`, `AHeaderOnlyInputIsReportedAsAnEmptyDatasetError` (ReportTests) | normal path with native column and export; failure path with consistent state |
+| Native integration | `TheRealNativeCallReturnsTheHandCalculatedTier` (8 rows), `InvalidDistancesAreRejectedBeforeTheNativeCall` (3 rows) (NativeTierTests) | real call; refusal before the call |
+| Native failures | `AMissingLibraryBecomesALoadFailure`, `ALibraryOfTheWrongArchitectureBecomesALoadFailure`, `AMissingEntryPointBecomesABindingFailure`, `ANativeRejectionIsReportedWithItsOwnCode` (NativeTierTests) | controlled Result failures |
+
+Latest test outcome: **Passed 129, Failed 0** (`dotnet test --no-restore`, .NET 10.0.401).
+
+## Member contribution scope (Assignment 8, proposed)
+
+| Member | Implemented logic | Tests | Documentation and defense scope |
+|---|---|---|---|
+| **Yesyentai Byerdikhajy** | `Scoring.cs` (curried `CreateScore`); `Reports.cs` (both reports); `ReportConsole.cs` and `ReportExport.cs` (console, render, export); `report` mode in `Program.cs` | ReportTests.cs (14 methods) | Tasks 2 and 3, report output and expected results, export behaviour |
+| **Estai** | `Queries.cs` (`ByStorageClass`, `Require`); `CsvBoundary.cs` (streaming, materialisation, file errors); `samples/shipments.csv` and `header-only.csv` | QueryTests.cs (5), CsvBoundaryTests.cs (9) | Tasks 1, 4, 5 and 6: extensions, deferred execution, resource ownership and retention note |
+| **Bekarys** | `native/ccq_native.c`, `native/build.cmd`, `native/ccq_native.dll`; `NativeTier.cs` (binding and adapter); native copy items in both project files | NativeTierTests.cs (6 methods, 15 cases) | Tasks 7, 8 and 9: native contract, build and loading, difficulty and resolution |
+
+These allocations identify responsibility for review and defense. Each member must explain their own part under the
+course policy. Allocation does not establish independent authorship.
+
+## Individual submission files
+
+Each member uploads a ZIP of the complete runnable project with a root `CONTRIBUTION.md` that names the submitter.
+The ZIP includes C# source, tests, README, sample data and `native/` (C source, build script and the DLL).
+It excludes `.git`, `bin`, `obj`, IDE caches and credentials.
+
+---
+
+# Earlier assignment documentation (Assignment 7 and before)
 # ColdChainQuotes Assignment 7
 
 **Group IT-2511:** Yesyentai Byerdikhajy, Estay, Byegarys.
