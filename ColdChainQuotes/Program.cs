@@ -13,6 +13,9 @@ public static class Program
         if (args.Length > 0 && args[0].Equals("result", StringComparison.OrdinalIgnoreCase))
             return ResultConsole.Run(args.Skip(1).ToArray(), Console.Out);
 
+        if (args.Length > 0 && args[0].Equals("report", StringComparison.OrdinalIgnoreCase))
+            return ReportConsole.Run(args.Skip(1).ToArray(), Console.Out);
+
         // "book" switches to the booking workflow (Assignment 6); anything else is the quote report.
         if (args.Length > 0 && args[0].Equals("book", StringComparison.OrdinalIgnoreCase))
             return RunBookings(args.Skip(1).ToArray());
