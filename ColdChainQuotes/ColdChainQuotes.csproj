@@ -11,4 +11,9 @@
     <None Include="..\native\ccq_native.dll" Link="ccq_native.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Tests may build any booking state directly (internal constructors); other code cannot. -->
+    <InternalsVisibleTo Include="ColdChainQuotes.Tests" />
+  </ItemGroup>
+
 </Project>

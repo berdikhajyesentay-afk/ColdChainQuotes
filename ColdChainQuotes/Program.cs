@@ -9,17 +9,57 @@ public static class Program
     public static int Main(string[] args)
     {
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        return Run(args, Console.In, Console.Out);
+    }
 
-        if (args.Length > 0 && args[0].Equals("result", StringComparison.OrdinalIgnoreCase))
-            return ResultConsole.Run(args.Skip(1).ToArray(), Console.Out);
+    // One entry point for every command. The first word picks the workflow; the rest goes to it.
+    // Lifecycle: book (price, confirm) -> dispatch -> deliver -> invoice. "status" shows every booking.
+    public static int Run(string[] args, TextReader input, TextWriter output)
+    {
+        var command = args.Length > 0 ? args[0].ToLowerInvariant() : "help";
+        var rest = args.Skip(1).ToArray();
+        return command switch
+        {
+            "quote" => RunQuotes(rest),
+            "book" => RunBookings(rest),
+            "result" => ResultConsole.Run(rest, output),
+            "report" => ReportConsole.Run(rest, output),
+            "dispatch" => DispatchConsole.Run(rest, output),
+            "deliver" => DeliveryConsole.Run(rest, output),
+            "invoice" => InvoiceConsole.Run(rest, output),
+            "confirm" => StateConsole.Confirm(rest, output),
+            "status" => StateConsole.Status(rest, output),
+            "reset" => StateConsole.Reset(rest, output),
+            "menu" => Menu.Run(input, output, a => Run(a, input, output)),
+            "help" or "--help" or "-h" => Help(output),
+            // Assignment 5 compatibility: "dotnet run -- shipments.txt express" still runs the quote report.
+            _ => RunQuotes(args)
+        };
+    }
 
-        if (args.Length > 0 && args[0].Equals("report", StringComparison.OrdinalIgnoreCase))
-            return ReportConsole.Run(args.Skip(1).ToArray(), Console.Out);
+    public static int Help(TextWriter output)
+    {
+        output.WriteLine("ColdChainQuotes: refrigerated delivery quotes, bookings, dispatch, delivery checks and invoices");
+        output.WriteLine();
+        output.WriteLine("  quote [file] [standard|express|both]   W1 quote pipeline (default shipments.txt, both)");
+        output.WriteLine("  book [shipments] [actions]             W2 apply price/confirm actions from a file");
+        output.WriteLine("  result [json] [id] [policy]            W2 price+confirm one booking with Result (demo without id)");
+        output.WriteLine("  confirm <id> [standard|express]       W2 price and confirm one booking in the saved state");
+        output.WriteLine("  dispatch <id> <vehicle> | dispatch auto <id> [firstfit|bestfit] | dispatch fleet   W3");
+        output.WriteLine("  deliver <id> [strict|tolerant] [readings] | deliver report                      W4");
+        output.WriteLine("  invoice <customer> [loyalty|bulk] [--export file]                               W5");
+        output.WriteLine("  report [csv] [--export file]           revenue and cold-store priority reports");
+        output.WriteLine("  status                                 every saved booking and its state");
+        output.WriteLine("  reset                                  start again from samples/shipments.json");
+        output.WriteLine("  menu                                   numbered menu for the commands above");
+        output.WriteLine();
+        output.WriteLine("Saved-state commands (confirm, dispatch, deliver, invoice, status, reset) read and write");
+        output.WriteLine($"{StateStore.DefaultStatePath}; add --state <path> or set CCQ_STATE to use another file.");
+        return 0;
+    }
 
-        // "book" switches to the booking workflow (Assignment 6); anything else is the quote report.
-        if (args.Length > 0 && args[0].Equals("book", StringComparison.OrdinalIgnoreCase))
-            return RunBookings(args.Skip(1).ToArray());
-
+    static int RunQuotes(string[] args)
+    {
         var inputPath = args.Length > 0 ? args[0] : "shipments.txt";
         var policyName = args.Length > 1 ? args[1].ToLowerInvariant() : "both";
 

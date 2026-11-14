@@ -45,6 +45,111 @@ public abstract record Booking
         public decimal Price { get; }
         public int Number { get; }
     }
+
+    // Final-exam lifecycle (shared foundation). Each later state is built from the state before it,
+    // so it can exist only after that state existed. The rules that create them live with their owners:
+    // Dispatched in DispatchRules (Bekarys), Delivered and Spoiled in DeliveryRules (Estai),
+    // Invoiced in Invoicing (Yesyentai).
+
+    // Assigned to a refrigerated vehicle. Carries the vehicle and the native distance tier.
+    public sealed record Dispatched : Booking
+    {
+        internal Dispatched(Confirmed confirmed, string vehicleId, DistanceTier tier) : base(confirmed.Shipment)
+        {
+            PolicyName = confirmed.PolicyName;
+            Price = confirmed.Price;
+            Number = confirmed.Number;
+            VehicleId = vehicleId;
+            Tier = tier;
+        }
+
+        public string PolicyName { get; }
+        public decimal Price { get; }
+        public int Number { get; }
+        public string VehicleId { get; }
+        public DistanceTier Tier { get; }
+    }
+
+    // Delivered with the cold chain intact (under the chosen tolerance policy).
+    public sealed record Delivered : Booking
+    {
+        internal Delivered(Dispatched dispatched, int readingCount) : base(dispatched.Shipment)
+        {
+            PolicyName = dispatched.PolicyName;
+            Price = dispatched.Price;
+            Number = dispatched.Number;
+            VehicleId = dispatched.VehicleId;
+            ReadingCount = readingCount;
+        }
+
+        public string PolicyName { get; }
+        public decimal Price { get; }
+        public int Number { get; }
+        public string VehicleId { get; }
+        public int ReadingCount { get; }
+    }
+
+    // Delivered, but the cold chain broke. Carries the breach reason. Credited on the invoice.
+    public sealed record Spoiled : Booking
+    {
+        internal Spoiled(Dispatched dispatched, string reason) : base(dispatched.Shipment)
+        {
+            PolicyName = dispatched.PolicyName;
+            Price = dispatched.Price;
+            Number = dispatched.Number;
+            VehicleId = dispatched.VehicleId;
+            Reason = reason;
+        }
+
+        public string PolicyName { get; }
+        public decimal Price { get; }
+        public int Number { get; }
+        public string VehicleId { get; }
+        public string Reason { get; }
+    }
+
+    // Billed on an invoice. Only a Delivered booking can become Invoiced, and only once.
+    public sealed record Invoiced : Booking
+    {
+        internal Invoiced(Delivered delivered, string invoiceNumber) : base(delivered.Shipment)
+        {
+            PolicyName = delivered.PolicyName;
+            Price = delivered.Price;
+            Number = delivered.Number;
+            VehicleId = delivered.VehicleId;
+            ReadingCount = delivered.ReadingCount;
+            InvoiceNumber = invoiceNumber;
+        }
+
+        public string PolicyName { get; }
+        public decimal Price { get; }
+        public int Number { get; }
+        public string VehicleId { get; }
+        public int ReadingCount { get; }
+        public string InvoiceNumber { get; }
+    }
+
+    // A Spoiled booking whose price was credited on an invoice. Only a Spoiled booking can become
+    // Credited, and only once, so the same credit can never appear on two invoices.
+    public sealed record Credited : Booking
+    {
+        internal Credited(Spoiled spoiled, string invoiceNumber) : base(spoiled.Shipment)
+        {
+            PolicyName = spoiled.PolicyName;
+            Price = spoiled.Price;
+            Number = spoiled.Number;
+            VehicleId = spoiled.VehicleId;
+            Reason = spoiled.Reason;
+            InvoiceNumber = invoiceNumber;
+        }
+
+        public string PolicyName { get; }
+        public decimal Price { get; }
+        public int Number { get; }
+        public string VehicleId { get; }
+        public string Reason { get; }
+        public string InvoiceNumber { get; }
+    }
 }
 
 // What a caller asks for. Price names the policy; Confirm needs nothing else.
@@ -87,6 +192,8 @@ public static class BookingRules
                 new BookingStep.Rejected($"{quoted.Shipment.Id} is already priced ({quoted.PolicyName}, {Money(quoted.Price)})"),
             Booking.Confirmed confirmed =>
                 new BookingStep.Rejected($"{confirmed.Shipment.Id} is confirmed; its price can't change"),
+            Booking.Dispatched or Booking.Delivered or Booking.Spoiled or Booking.Invoiced or Booking.Credited =>
+                new BookingStep.Rejected($"{current.Shipment.Id} is already {StateName(current)}; its price can't change"),
             _ => new BookingStep.Rejected($"{current.Shipment.Id} is in an unknown state")
         };
 
@@ -99,16 +206,35 @@ public static class BookingRules
                 new BookingStep.Rejected($"{requested.Shipment.Id} has no price yet: price it before confirming"),
             Booking.Quoted quoted => new BookingStep.Moved(new Booking.Confirmed(quoted, nextNumber)),
             Booking.Confirmed confirmed => new BookingStep.Repeated(confirmed),
+            Booking.Dispatched or Booking.Delivered or Booking.Spoiled or Booking.Invoiced or Booking.Credited =>
+                new BookingStep.Rejected($"{current.Shipment.Id} is already {StateName(current)}; it was confirmed earlier"),
             _ => new BookingStep.Rejected($"{current.Shipment.Id} is in an unknown state")
         };
+
+    // Lower-case state name for messages, for example "dispatched".
+    public static string StateName(Booking booking) => booking switch
+    {
+        Booking.Requested => "requested",
+        Booking.Quoted => "quoted",
+        Booking.Confirmed => "confirmed",
+        Booking.Dispatched => "dispatched",
+        Booking.Delivered => "delivered",
+        Booking.Spoiled => "spoiled",
+        Booking.Invoiced => "invoiced",
+        Booking.Credited => "credited",
+        _ => "unknown"
+    };
 
     public static string Money(decimal amount) => amount.ToString("0.##", CultureInfo.InvariantCulture);
 }
 
-// All bookings plus the next confirmation number. Every change returns a new Ledger;
+// All bookings plus the next confirmation and invoice numbers. Every change returns a new Ledger;
 // a rejected or repeated action returns the same Ledger, so nothing is half-updated.
 public sealed record Ledger(ImmutableSortedDictionary<string, Booking> Bookings, int NextConfirmation)
 {
+    // Next invoice number (persisted by StateStore). Changed only with `ledger with { ... }`.
+    public int NextInvoice { get; init; } = 1;
+
     // One Requested booking for every shipment that stage 1 serves.
     public static Ledger Open(IEnumerable<Shipment> shipments, decimal maxDistanceKm) =>
         new Ledger(
@@ -139,7 +265,7 @@ public sealed record Ledger(ImmutableSortedDictionary<string, Booking> Bookings,
         return step switch
         {
             BookingStep.Moved { Next: Booking.Confirmed confirmed } =>
-                (new Ledger(ledger.Bookings.SetItem(current.Shipment.Id, confirmed), ledger.NextConfirmation + 1), step),
+                (ledger with { Bookings = ledger.Bookings.SetItem(current.Shipment.Id, confirmed), NextConfirmation = ledger.NextConfirmation + 1 }, step),
             BookingStep.Moved moved =>
                 (ledger with { Bookings = ledger.Bookings.SetItem(current.Shipment.Id, moved.Next) }, step),
             _ => (ledger, step)

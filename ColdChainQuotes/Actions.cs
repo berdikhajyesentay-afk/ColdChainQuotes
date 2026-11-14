@@ -99,6 +99,11 @@ public static class Actions
         Booking.Requested => "Requested",
         Booking.Quoted quoted => $"Quoted        {BookingRules.Money(quoted.Price)} ({quoted.PolicyName})",
         Booking.Confirmed confirmed => $"Confirmed #{confirmed.Number}  {BookingRules.Money(confirmed.Price)} ({confirmed.PolicyName})",
+        Booking.Dispatched d => $"Dispatched #{d.Number} {BookingRules.Money(d.Price)} ({d.PolicyName}) on {d.VehicleId}, {d.Tier}",
+        Booking.Delivered d => $"Delivered #{d.Number}  {BookingRules.Money(d.Price)} ({d.PolicyName}), {d.ReadingCount} readings",
+        Booking.Spoiled s => $"Spoiled #{s.Number}    {BookingRules.Money(s.Price)} ({s.PolicyName}): {s.Reason}",
+        Booking.Invoiced i => $"Invoiced #{i.Number}   {BookingRules.Money(i.Price)} ({i.PolicyName}) on {i.InvoiceNumber}",
+        Booking.Credited c => $"Credited #{c.Number}   {BookingRules.Money(c.Price)} ({c.PolicyName}) on {c.InvoiceNumber}: {c.Reason}",
         _ => "Unknown state"
     };
 }
