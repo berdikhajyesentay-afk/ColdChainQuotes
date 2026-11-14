@@ -158,14 +158,27 @@ public class ReportTests : IDisposable
     }
 
     [Fact]
-    public void AHeaderOnlyInputIsReportedAsAnEmptyDatasetError()
+    public void AHeaderOnlyInputPrintsNoRecordsInEveryReport()
     {
         var output = new StringWriter();
 
         var exit = ReportConsole.Run(new[] { Path.Combine(AppContext.BaseDirectory, "samples", "header-only.csv") }, output);
 
-        Assert.Equal(1, exit);
-        Assert.Contains("ERROR [empty_dataset]", output.ToString());
+        Assert.Equal(0, exit);
+        var lines = output.ToString().Split(Environment.NewLine);
+        Assert.Equal(3, lines.Count(l => l == "  no records"));
+        Assert.Contains(lines, l => l.StartsWith("Total") && l.EndsWith("0"));
+    }
+
+    [Fact]
+    public void ADatasetWithNoColdShipmentsPrintsNoRecordsOnlyInThePriorityReports()
+    {
+        var frozenOnly = new[] { TestData.Ship("F1", StorageClass.Frozen, 5m, 40m) };
+
+        var lines = ReportConsole.Render(frozenOnly);
+
+        Assert.Equal(2, lines.Count(l => l == "  no records"));
+        Assert.Contains(lines, l => l.StartsWith("Customer F1"));
     }
 
     [Fact]

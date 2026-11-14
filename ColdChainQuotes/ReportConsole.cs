@@ -15,8 +15,8 @@ public static class ReportConsole
         var exportAt = Array.IndexOf(args, "--export");
         var exportPath = exportAt >= 0 && exportAt + 1 < args.Length ? args[exportAt + 1] : null;
 
-        var loaded = CsvBoundary.Load(path)
-            .Require(rows => rows.Length > 0, new AppError("empty_dataset", $"'{path}' has no shipment rows."));
+        // An empty dataset (header only) is valid: every report then prints "no records".
+        var loaded = CsvBoundary.Load(path);
         switch (loaded)
         {
             case Result<ImmutableArray<Shipment>>.Failure failure:
@@ -40,6 +40,8 @@ public static class ReportConsole
         var revenue = Reports.RevenueByCustomer(all, MaxDistanceKm, PricePolicies.Standard);
         lines.Add("Report 1: revenue by customer (Standard policy, served shipments up to 300 km)");
         lines.Add($"{"Customer",-12} {"Shipments",9} {"WeightKg",9} {"Revenue",9}");
+        if (revenue.Count == 0)
+            lines.Add("  no records");
         foreach (var row in revenue)
             lines.Add($"{row.Customer,-12} {row.Shipments,9} {Money(row.WeightKg),9} {Money(row.Revenue),9}");
         lines.Add($"{"Total",-12} {revenue.Sum(r => r.Shipments),9} {Money(revenue.Sum(r => r.WeightKg)),9} {Money(revenue.Sum(r => r.Revenue)),9}");
@@ -60,7 +62,10 @@ public static class ReportConsole
             title,
             $"{"Rank",4} {"Id",-5} {"Customer",-12} {"Tier",-10} {"Score",8}"
         };
-        foreach (var row in Reports.ColdPriority(shipments, MaxDistanceKm, score))
+        var rows = Reports.ColdPriority(shipments, MaxDistanceKm, score);
+        if (rows.Count == 0)
+            lines.Add("  no records");
+        foreach (var row in rows)
         {
             // Native call, made at the boundary: the tier comes from C, not from the pure query.
             var tier = NativeTier.Classify(row.DistanceKm) switch
