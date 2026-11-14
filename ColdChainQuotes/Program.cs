@@ -44,10 +44,10 @@ public static class Program
         output.WriteLine("  quote [file] [standard|express|both]   W1 quote pipeline (default shipments.txt, both)");
         output.WriteLine("  book [shipments] [actions]             W2 apply price/confirm actions from a file");
         output.WriteLine("  result [json] [id] [policy]            W2 price+confirm one booking with Result (demo without id)");
-        output.WriteLine("  confirm <id> [standard|express]       W2 price and confirm one booking in the saved state");
+        output.WriteLine("  confirm <id> [standard|express]        W2 price and confirm one booking in the saved state");
         output.WriteLine("  dispatch <id> <vehicle> | dispatch auto <id> [firstfit|bestfit] | dispatch fleet   W3");
         output.WriteLine("  deliver <id> [strict|tolerant] [readings] | deliver report                      W4");
-        output.WriteLine("  invoice <customer> [loyalty|bulk] [--export file]                               W5");
+        output.WriteLine("  invoice <customer> [loyalty|bulk|none] [--export file]                          W5");
         output.WriteLine("  report [csv] [--export file]           revenue and cold-store priority reports");
         output.WriteLine("  status                                 every saved booking and its state");
         output.WriteLine("  reset                                  start again from samples/shipments.json");
