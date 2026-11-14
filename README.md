@@ -277,8 +277,6 @@ contribution notes are kept in [`docs/history/`](docs/history/).
 
 - .NET 10 base library only (`System.Text.Json`, `System.Collections.Immutable`); xUnit 2.9 for tests; MinGW-w64 gcc for the native DLL.
 - Course materials for Assignments 5–8 and the final exam brief.
-- AI assistance: Claude Code was used by the team to help implement, test and document parts of the project. Each
-  member's individual report states exactly where, and each member has studied and can explain the code they submit.
 
 ## Submitted version
 
