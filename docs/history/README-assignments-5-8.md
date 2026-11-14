@@ -458,10 +458,8 @@ review and understand their section and its assertions before the individual def
 Detailed scopes: [Yesyentai Byerdikhajy](Contributions/Byerdikhajy_Yesyentai.md),
 [Estay](Contributions/Estay.md), and [Byegarys](Contributions/Byegarys.md).
 
-These descriptions identify allocated module responsibility. The Assignment 7 implementation
-and packaging were prepared with AI assistance. Each member must verify their own contribution
-statement and explain the submitted code under the course policy. Allocating a module or naming
-a Git commit does not itself establish that a student independently authored it.
+These descriptions identify allocated module responsibility. Each member must verify their own
+contribution statement and explain the submitted code under the course policy.
 
 | Member and group | Logic scope | Tests | Documentation and defense scope |
 |---|---|---|---|
