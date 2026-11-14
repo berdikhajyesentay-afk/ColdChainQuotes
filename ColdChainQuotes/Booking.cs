@@ -49,7 +49,7 @@ public abstract record Booking
     // Final-exam lifecycle (shared foundation). Each later state is built from the state before it,
     // so it can exist only after that state existed. The rules that create them live with their owners:
     // Dispatched in DispatchRules (Bekarys), Delivered and Spoiled in DeliveryRules (Estai),
-    // Invoiced in Invoicing (Yesyentai).
+    // Invoiced in Invoicing (Byerdikhajy).
 
     // Assigned to a refrigerated vehicle. Carries the vehicle and the native distance tier.
     public sealed record Dispatched : Booking

@@ -1,6 +1,6 @@
 namespace ColdChainQuotes;
 
-// Console boundary for W5 Invoice (Yesyentai).
+// Console boundary for W5 Invoice (Byerdikhajy).
 // invoice <customer> [loyalty|bulk|none] [--export file] [--state file] [--seed file]
 public static class InvoiceConsole
 {

@@ -2,7 +2,7 @@ using ColdChainQuotes;
 
 namespace ColdChainQuotes.Tests;
 
-// Yesyentai: shared foundation. Lifecycle states, saved state, and the state commands.
+// Byerdikhajy: shared foundation. Lifecycle states, saved state, and the state commands.
 public class StateStoreTests : IDisposable
 {
     readonly string folder = Path.Combine(Path.GetTempPath(), "ColdChainState-" + Guid.NewGuid());

@@ -9,7 +9,7 @@ files and the console kept at the edges.
 |---|---|
 | Course | Functional Programming in C#, Final Exam |
 | Group | IT-2511 |
-| Team | Yesyentai Byerdikhajy, Bekarys Kuvandyk, Estai |
+| Team | Byerdikhajy Yesyentai, Bekarys Kuvandyk, Estai |
 | Repository | https://github.com/berdikhajyesentay-afk/ColdChainQuotes |
 | Submitted version | branch `main`, tag `final-submission` (see [Submitted version](#submitted-version)) |
 
@@ -37,11 +37,11 @@ Requested --price--> Quoted --confirm--> Confirmed --dispatch--> Dispatched --de
 
 | # | Workflow | Input, rules, result | Command | Owner |
 |---|---|---|---|---|
-| W1 | **Quote pipeline** | shipments file, then rejected lines, distance limit 300 km, price policy, then a sorted quote summary | `quote [file] [standard\|express\|both]` | Bekarys (stages), Estai (parsing), Yesyentai (policies, CLI) |
-| W2 | **Price and confirm a booking** | a booking id and a policy, then the booking must be open and not yet priced, then Confirmed #n (Result with Map/Bind) | `confirm <id> [policy]`, `book [shipments] [actions]`, `result` | Bekarys (states, Result), Yesyentai (actions, console), Estai (validated factory, JSON) |
+| W1 | **Quote pipeline** | shipments file, then rejected lines, distance limit 300 km, price policy, then a sorted quote summary | `quote [file] [standard\|express\|both]` | Bekarys (stages), Estai (parsing), Byerdikhajy (policies, CLI) |
+| W2 | **Price and confirm a booking** | a booking id and a policy, then the booking must be open and not yet priced, then Confirmed #n (Result with Map/Bind) | `confirm <id> [policy]`, `book [shipments] [actions]`, `result` | Bekarys (states, Result), Byerdikhajy (actions, console), Estai (validated factory, JSON) |
 | W3 | **Dispatch** | a confirmed booking and a vehicle, then freezer, capacity and native distance-tier range checks, then Dispatched | `dispatch <id> <vehicle>`, `dispatch auto <id> [firstfit\|bestfit]`, `dispatch fleet` | Bekarys (pending) |
 | W4 | **Delivery check** | a dispatched booking and a temperature log (lazy CSV), then the safe range under the strict or tolerant policy, then Delivered or Spoiled | `deliver <id> [strict\|tolerant] [readings]`, `deliver report` | Estai (pending) |
-| W5 | **Invoice** | a customer and a discount, then Delivered bookings are billed and Spoiled ones credited once, then an invoice is saved and exported | `invoice <customer> [loyalty\|bulk\|none] [--export file]` | Yesyentai |
+| W5 | **Invoice** | a customer and a discount, then Delivered bookings are billed and Spoiled ones credited once, then an invoice is saved and exported | `invoice <customer> [loyalty\|bulk\|none] [--export file]` | Byerdikhajy |
 
 Two reports (`report`): **revenue by customer** and **cold-store priority** (in two configured scorings). W3 and W4
 add `dispatch fleet` (load per vehicle) and `deliver report` (breaches by storage class).
@@ -256,11 +256,11 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 | Result/Option and composition (A7) | `Outcomes.cs`, `ResultBookings.cs` | Bekarys |
 | Native C library and P/Invoke (A8) | `native/ccq_native.c`, `NativeTier.cs` | Bekarys |
 | **W3 Dispatch (final)** | `Dispatch.cs`, `Fleet.cs`, `samples/vehicles.json` | Bekarys (pending) |
-| Price policies and CLI (A5), actions file (A6), result console (A7) | `PricePolicies.cs`, `Program.cs`, `Actions.cs`, `ResultConsole.cs` | Yesyentai |
-| Curried scoring, reports, export (A8) | `Scoring.cs`, `Reports.cs`, `ReportConsole.cs`, `ReportExport.cs` | Yesyentai |
-| **Shared foundation (final)** | `Booking.cs` (Dispatched…Credited, `NextInvoice`), `StateStore.cs`, `StateConsole.cs`, `Menu.cs`, `Program.Run`, `native/ccq_native.h` | Yesyentai |
-| **W5 Invoice (final)** | `Invoicing.cs`, `InvoiceConsole.cs` | Yesyentai |
-| Final README, group report | `README.md`, `docs/` | Yesyentai (with team review) |
+| Price policies and CLI (A5), actions file (A6), result console (A7) | `PricePolicies.cs`, `Program.cs`, `Actions.cs`, `ResultConsole.cs` | Byerdikhajy |
+| Curried scoring, reports, export (A8) | `Scoring.cs`, `Reports.cs`, `ReportConsole.cs`, `ReportExport.cs` | Byerdikhajy |
+| **Shared foundation (final)** | `Booking.cs` (Dispatched…Credited, `NextInvoice`), `StateStore.cs`, `StateConsole.cs`, `Menu.cs`, `Program.Run`, `native/ccq_native.h` | Byerdikhajy |
+| **W5 Invoice (final)** | `Invoicing.cs`, `InvoiceConsole.cs` | Byerdikhajy |
+| Final README, group report | `README.md`, `docs/` | Byerdikhajy (with team review) |
 
 Each member's tests are in the test files listed next to their workflow. Earlier per-assignment documentation and
 contribution notes are kept in [`docs/history/`](docs/history/).

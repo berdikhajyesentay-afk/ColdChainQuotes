@@ -3,7 +3,7 @@ using System.Globalization;
 
 namespace ColdChainQuotes;
 
-// W5 Invoice (Yesyentai). Pure: no Console, files or clock. The caller saves the returned Ledger.
+// W5 Invoice (Byerdikhajy). Pure: no Console, files or clock. The caller saves the returned Ledger.
 
 // One line of an invoice. A Delivered booking is a charge; a Spoiled booking is a credit (negative amount).
 public sealed record InvoiceLine(string ShipmentId, int Number, string Kind, decimal Amount, string Note);

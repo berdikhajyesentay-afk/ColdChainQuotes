@@ -2,7 +2,7 @@ using ColdChainQuotes;
 
 namespace ColdChainQuotes.Tests;
 
-// Yesyentai: W5 Invoice. Curried discounts, the pure Build rule, and the invoice command.
+// Byerdikhajy: W5 Invoice. Curried discounts, the pure Build rule, and the invoice command.
 public class InvoicingTests : IDisposable
 {
     readonly string folder = Path.Combine(Path.GetTempPath(), "ColdChainInvoice-" + Guid.NewGuid());
