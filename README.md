@@ -9,7 +9,7 @@ files and the console kept at the edges.
 |---|---|
 | Course | Functional Programming in C#, Final Exam |
 | Group | IT-2511 |
-| Team | Byerdikhajy Yesyentai, Bekarys Kuvandyk, Estai |
+| Team | Byerdikhajy Yesyentai, Bekarys Kuvandyk, Estai Beisenbai |
 | Repository | https://github.com/berdikhajyesentay-afk/ColdChainQuotes |
 | Submitted version | branch `main`, tag `final-submission` (see [Submitted version](#submitted-version)) |
 
