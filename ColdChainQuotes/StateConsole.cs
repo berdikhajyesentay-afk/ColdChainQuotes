@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace ColdChainQuotes;
 
 // Console boundary for the saved state: load, run one pure step, save only if the step succeeded.
@@ -68,9 +70,15 @@ public static class StateConsole
     public static int Reset(string[] args, TextWriter output)
     {
         var (_, statePath, seedPath) = StateStore.ResolvePaths(args);
-        var outcome = JsonBoundary.Load(seedPath)
-            .Bind(ledger => StateStore.Save(statePath, ledger)
-                .Map(_ => $"state {statePath} reset from {seedPath} ({ledger.Bookings.Count} open bookings)"));
+        // JsonBoundary.Reload (A7) keeps the current ledger if the seed cannot be loaded.
+        // The current state may itself be missing or unreadable; reset must still work then.
+        var current = StateStore.Load(statePath) is Result<Ledger>.Success saved
+            ? saved.Value
+            : new Ledger(ImmutableSortedDictionary<string, Booking>.Empty, 1);
+        var (next, reloaded) = JsonBoundary.Reload(current, seedPath);
+        var outcome = reloaded
+            .Bind(_ => StateStore.Save(statePath, next)
+                .Map(_ => $"state {statePath} reset from {seedPath} ({next.Bookings.Count} open bookings)"));
         return Show(outcome, output);
     }
 }

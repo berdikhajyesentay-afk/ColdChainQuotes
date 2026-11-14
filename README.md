@@ -230,7 +230,7 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 
 ## Testing
 
-`dotnet test` runs the xUnit suite (162 tests at the time of writing). The suites are:
+`dotnet test` runs the xUnit suite (163 tests at the time of writing). The suites are:
 
 | File | Covers |
 |---|---|

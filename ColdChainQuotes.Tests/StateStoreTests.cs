@@ -183,6 +183,22 @@ public class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void ResetWithABadSeedKeepsTheCurrentState()
+    {
+        Program.Run(With("confirm", "SH1"), TextReader.Null, new StringWriter());
+        var before = File.ReadAllText(state);
+        var badSeed = Path.Combine(folder, "bad.json");
+        File.WriteAllText(badSeed, "{ not json");
+        var output = new StringWriter();
+
+        var code = Program.Run(["reset", "--state", state, "--seed", badSeed], TextReader.Null, output);
+
+        Assert.Equal(1, code);
+        Assert.Contains("ERROR [malformed_data]", output.ToString());
+        Assert.Equal(before, File.ReadAllText(state));
+    }
+
+    [Fact]
     public void ResetRestoresTheSeedAndMenuRunsTheSameCommands()
     {
         Program.Run(With("confirm", "SH1"), TextReader.Null, new StringWriter());
