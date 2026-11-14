@@ -1,0 +1,6 @@
+[
+  { "id": "V1", "capacityKg": 50,  "hasFreezer": false, "maxTier": "Local" },
+  { "id": "V2", "capacityKg": 100, "hasFreezer": true,  "maxTier": "Regional" },
+  { "id": "V3", "capacityKg": 500, "hasFreezer": true,  "maxTier": "LongHaul" },
+  { "id": "V4", "capacityKg": 80,  "hasFreezer": false, "maxTier": "LongHaul" }
+]
