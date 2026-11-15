@@ -9,7 +9,7 @@ files and the console kept at the edges.
 |---|---|
 | Course | Functional Programming in C#, Final Exam |
 | Group | IT-2511 |
-| Team | Byerdikhajy Yesyentai, Bekarys Kuvandyk, Estai Beisenbai |
+| Team | Byerdikhajy Yesyentai, Bekarys Kuvandyk, Estai Beisenbay |
 | Repository | https://github.com/berdikhajyesentay-afk/ColdChainQuotes |
 | Submitted version | branch `main`, tag `final-submission` (see [Submitted version](#submitted-version)) |
 
@@ -121,34 +121,45 @@ $ dotnet run -- status
   SH5   CityLab    Requested
 ```
 
-Dispatch and delivery, continuing from the state above (`confirm SH2`, `SH3` and `SH5` first). Real output:
+Dispatch and delivery on a fresh state (after `reset`). This is real output, in the order it was run; the state file is the
+`--state` file, and a failed command leaves it unchanged:
 
 ```text
+$ dotnet run -- confirm SH1
+SUCCESS SH1 confirmed as #1, 4400 (Standard)
+$ dotnet run -- confirm SH2
+SUCCESS SH2 confirmed as #2, 3700 (Standard)
+$ dotnet run -- confirm SH3
+SUCCESS SH3 confirmed as #3, 16320 (Standard)
+$ dotnet run -- confirm SH5
+SUCCESS SH5 confirmed as #4, 1080 (Standard)
+$ dotnet run -- dispatch SH2 V1
+ERROR [storage_mismatch] SH2 is Frozen and V1 has no freezer.
+$ dotnet run -- dispatch SH1 V1
+ERROR [over_capacity] V1 carries 0 kg of 50 kg; SH1 adds 60 kg.
 $ dotnet run -- dispatch SH1 V2
 SUCCESS SH1 dispatched on V2 (tier Local, 60 kg)
-$ dotnet run -- dispatch SH2 V1                      # expected failure: Frozen load, truck without a freezer
-ERROR [storage_mismatch] SH2 is Frozen and V1 has no freezer.
-$ dotnet run -- dispatch SH1 V1                      # (on a confirmed SH1) expected failure: 60 kg on a 50 kg truck
-ERROR [over_capacity] V1 carries 0 kg of 50 kg; SH1 adds 60 kg.
-$ dotnet run -- dispatch auto SH3 firstfit           # the same booking, two policies, two trucks
-SUCCESS SH3 dispatched on V3 by FirstFit (tier LongHaul, 8 kg)
-$ dotnet run -- dispatch auto SH3 bestfit            # (on a fresh state) the tightest fit
+$ dotnet run -- dispatch auto SH2 bestfit
+SUCCESS SH2 dispatched on V2 by BestFit (tier Local, 5 kg)
+$ dotnet run -- dispatch auto SH5 firstfit
+SUCCESS SH5 dispatched on V1 by FirstFit (tier Local, 2 kg)
+$ dotnet run -- dispatch auto SH3 bestfit
 SUCCESS SH3 dispatched on V4 by BestFit (tier LongHaul, 8 kg)
 $ dotnet run -- dispatch fleet
-Fleet load (dispatched bookings per vehicle, heaviest first, ties by id)
+SUCCESS Fleet load (dispatched bookings per vehicle, heaviest first, ties by id)
 Vehicle  Capacity Bookings   LoadKg
 V2            100        2       65
 V4             80        1        8
 V1             50        1        2
 V3            500        0        0
 Total                    4       75
-$ dotnet run -- deliver SH1                          # strict is the default
+$ dotnet run -- deliver SH1
 SUCCESS SH1 delivered (Strict): 5 readings within 2..8 C
-$ dotnet run -- deliver SH2 strict                   # one reading of -15 C in a -25..-18 C load
+$ dotnet run -- deliver SH2 strict
 SUCCESS SH2 spoiled (Strict): reading at minute 30 is -15 C, outside -25..-18 C
-$ dotnet run -- deliver SH5 tolerant                 # two readings in a row above 8 C
+$ dotnet run -- deliver SH5 tolerant
 SUCCESS SH5 spoiled (Tolerant): readings from minute 15 to 30 are outside 2..8 C
-$ dotnet run -- deliver SH1                          # expected failure: already delivered
+$ dotnet run -- deliver SH1
 ERROR [not_dispatched] SH1 is delivered; only a dispatched booking can be delivered.
 $ dotnet run -- deliver report
 Report: closed deliveries by storage class
@@ -157,9 +168,26 @@ Cold              1        1      2
 Frozen            0        1      1
 ```
 
-The same readings give different outcomes under the two policies: on a fresh state, `deliver SH2 tolerant` ends with
-`SH2 delivered (Tolerant): 5 readings within -25..-18 C`, because the -15 C spike is a single reading. Spoiled is a
-success (the delivery was closed), so the state is saved and the invoice later credits it.
+The two dispatch policies choose different vehicles for the same booking. SH1 (Cold, 60 kg, 20 km) fits V2, V3 and V4;
+FirstFit takes the first in file order, BestFit the one with the least spare capacity (80 - 60 = 20 kg). Each run starts
+from a fresh state with only SH1 confirmed:
+
+```text
+$ dotnet run -- dispatch auto SH1 firstfit
+SUCCESS SH1 dispatched on V2 by FirstFit (tier Local, 60 kg)
+$ dotnet run -- dispatch auto SH1 bestfit
+SUCCESS SH1 dispatched on V4 by BestFit (tier Local, 60 kg)
+```
+
+The same readings also give different outcomes under the two delivery policies. SH2 (Frozen) has one reading of -15 C:
+Strict spoils it (above), Tolerant tolerates a single reading (fresh state, SH1 and SH2 confirmed and dispatched):
+
+```text
+$ dotnet run -- deliver SH2 tolerant
+SUCCESS SH2 delivered (Tolerant): 5 readings within -25..-18 C
+```
+
+Spoiled is a success (the delivery was closed), so the state is saved and the invoice later credits it.
 
 A successful invoice. This is the test `InvoiceCommandSavesTheStateAndExportsTheSameLines`, whose saved state has two
 Delivered bookings and one Spoiled booking for FreshFarm:
@@ -248,11 +276,11 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 | Curried function + 2 partial applications | `Scoring.CreateScore(10)(1)` / `(1)(10)` in the reports; `Discounts.Create(5000)(5)` = Loyalty, `(10000)(10)` = Bulk |
 | `yield return`, deferred execution, deliberate materialisation | `CsvBoundary.StreamRows` (opens nothing until enumerated) and `Materialise` (`ToArray` once); tests count opens and disposals |
 | Load JSON/CSV, save and export | `samples/*.json`/`*.csv` in; `StateStore.Save` (state) and `ReportExport.Write` (reports, invoices) out |
-| Two dispatch policies (HOF), documented difference | `DispatchPolicies.FirstFit` vs `BestFit` (`Func<IEnumerable<Vehicle>, Shipment, Option<Vehicle>>`) used by `DispatchRules.AssignAuto`: SH3 goes to V3 under FirstFit and V4 under BestFit; test `FirstFitAndBestFitChooseDifferentVehiclesForTheSameInput` |
+| Two dispatch policies (HOF), documented difference | `DispatchPolicies.FirstFit` vs `BestFit` (`Func<IEnumerable<Vehicle>, Shipment, Option<Vehicle>>`) used by `DispatchRules.AssignAuto`: SH1 goes to V2 under FirstFit and V4 under BestFit; test `FirstFitAndBestFitChooseDifferentVehiclesForTheSameInput` |
 | Two tolerance policies (HOF), documented difference | `TolerancePolicies.Strict` vs `Tolerant` (`Func<IReadOnlyList<TemperatureReading>, StorageClass, Option<string>>`) passed to `DeliveryRules.Complete`: SH2 is Spoiled under Strict and Delivered under Tolerant; test `SameReadingsSpoiledUnderStrictDeliveredUnderTolerant` |
 | W3/W4 rule chains (Bind, Option, Require) | `DispatchRules.Assign` / `AssignAuto` (codes `missing_booking`, `not_confirmed`, `missing_vehicle`, `storage_mismatch`, `over_capacity`, `out_of_range`, `no_vehicle_fits`); `DeliveryRules.Complete` (`missing_booking`, `not_dispatched`, `missing_readings`, `unordered_readings`, with `Require` and `Map`) |
 | W3/W4 reports with GroupBy | `DispatchRules.FleetLoad` (GroupBy vehicle, Count, Sum, tie-breaker by id); `DeliveryReports.ByStorageClass` (GroupBy storage class, Count, tie-breaker by name) |
-| Lazy readings, snapshot | `Readings.Stream` (`yield return`, nothing opens until enumerated) and `Readings.Materialise` (one `ToArray`); tests `CreatingTheStreamOpensNothing`, `TheMaterialisedSnapshotIsReusedWithoutReopeningTheFile` |
+| Lazy readings, snapshot | `Readings.Stream` (`yield return`, nothing opens until enumerated) and `Readings.Materialise` (one pass into an `ImmutableArray`); tests `CreatingTheStreamOpensNothing`, `TheMaterialisedSnapshotIsReusedWithoutReopeningTheFile` |
 | Native C + P/Invoke used in a calculation | `NativeTier.Classify` in the priority report and the dispatch range rule; `NativeTierTests` (real call and injected failure) |
 
 ## Persistence, errors and resources
@@ -282,8 +310,8 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 | `NativeTierTests` | a real native call, and injected load and binding failures |
 | `StateStoreTests` | new lifecycle states, save/load round trip, seeding, malformed state, failed save, `confirm`/`status`/`reset`/`menu` commands |
 | `InvoicingTests` | curried discounts, billing and crediting once, the three failure codes, full `invoice` command with export and failures |
-| `DispatchTests` (24 test methods) | W3: `Vehicle.Create` and its capacity boundaries, `FleetBoundary.Load` (missing file, malformed JSON, invalid and duplicate vehicles, empty fleet), every `DispatchRules.Assign` failure code, rounding up before the native call, an injected native failure, FirstFit against BestFit, `dispatch` / `dispatch auto` / `dispatch fleet` workflows, unchanged state file on failure |
-| `DeliveryTests`, `ReadingsTests` (20 and 12 test methods) | W4: `TemperatureReading.Create`, `Readings.ParseRow` with line numbers, lazy `Stream` (nothing opens until enumerated, reader disposed, one `ToArray`), missing and malformed readings file, safe-range boundaries, Strict against Tolerant, every `DeliveryRules.Complete` failure code, `deliver` and `deliver report` commands |
+| `DispatchTests` (30 tests) | W3: `Vehicle.Create` and its capacity boundaries, `FleetBoundary.Load` (missing file, malformed JSON, invalid and duplicate vehicles, empty fleet), every `DispatchRules.Assign` failure code, rounding up before the native call, an injected native failure, FirstFit against BestFit, `dispatch` / `dispatch auto` / `dispatch fleet` workflows, unchanged state file on failure |
+| `DeliveryTests`, `ReadingsTests` (26 and 19 tests) | W4: `TemperatureReading.Create`, `Readings.ParseRow` with line numbers, lazy `Stream` (nothing opens until enumerated, reader disposed, one materialising pass), missing and malformed readings file, safe-range boundaries, Strict against Tolerant, every `DeliveryRules.Complete` failure code, `deliver` and `deliver report` commands |
 
 ## Responsibilities
 
