@@ -358,4 +358,4 @@ contribution notes are kept in [`docs/history/`](docs/history/).
 | Repository | https://github.com/berdikhajyesentay-afk/ColdChainQuotes |
 | Branch | `main` |
 | Tag | `final-submission` |
-| Commit | `<FINAL_COMMIT>` |
+| Commit | `18ed4869e7d3e0f6658e95a07c135b97b68d4159` is the last commit with code changes. The tag `final-submission` points at the next commit, which changes only this line, because a commit cannot contain its own hash. The full hash of the tagged commit is in the group report and in `GIT_LINK.txt` in each submission zip; `git rev-parse final-submission` prints it. |
