@@ -13,10 +13,6 @@ files and the console kept at the edges.
 | Repository | https://github.com/berdikhajyesentay-afk/ColdChainQuotes |
 | Submitted version | branch `main`, tag `final-submission` (see [Submitted version](#submitted-version)) |
 
-> **Status while the work is in progress.** W3 Dispatch (Bekarys) and W4 Delivery (Estai) are still stubs in
-> `Dispatch.cs` and `Delivery.cs`. The commands exist and print `not implemented yet`. This README is updated
-> when their pull requests are merged.
-
 ## Problem, users and goals
 
 A dispatcher at a cold-chain carrier must answer, for every customer request: *what does it cost, can we
@@ -39,8 +35,8 @@ Requested --price--> Quoted --confirm--> Confirmed --dispatch--> Dispatched --de
 |---|---|---|---|---|
 | W1 | **Quote pipeline** | shipments file, then rejected lines, distance limit 300 km, price policy, then a sorted quote summary | `quote [file] [standard\|express\|both]` | Bekarys (stages), Estai (parsing), Byerdikhajy (policies, CLI) |
 | W2 | **Price and confirm a booking** | a booking id and a policy, then the booking must be open and not yet priced, then Confirmed #n (Result with Map/Bind) | `confirm <id> [policy]`, `book [shipments] [actions]`, `result` | Bekarys (states, Result), Byerdikhajy (actions, console), Estai (validated factory, JSON) |
-| W3 | **Dispatch** | a confirmed booking and a vehicle, then freezer, capacity and native distance-tier range checks, then Dispatched | `dispatch <id> <vehicle>`, `dispatch auto <id> [firstfit\|bestfit]`, `dispatch fleet` | Bekarys (pending) |
-| W4 | **Delivery check** | a dispatched booking and a temperature log (lazy CSV), then the safe range under the strict or tolerant policy, then Delivered or Spoiled | `deliver <id> [strict\|tolerant] [readings]`, `deliver report` | Estai (pending) |
+| W3 | **Dispatch** | a confirmed booking and a vehicle, then, in this order: the booking must be Confirmed, the vehicle must exist, a Frozen load needs a freezer, the load still on the vehicle plus this one must fit its capacity, and the native distance tier must not exceed the vehicle's `maxTier`; then Dispatched | `dispatch <id> <vehicle>`, `dispatch auto <id> [firstfit\|bestfit]`, `dispatch fleet` | Bekarys |
+| W4 | **Delivery check** | a dispatched booking and a temperature log (lazy CSV), then the booking must be Dispatched, the log must have readings for it in increasing minute order, and the strict or tolerant policy checks the safe range (Cold 2..8 C, Frozen -25..-18 C); then Delivered or Spoiled (both are successes) | `deliver <id> [strict\|tolerant] [readings]`, `deliver report` | Estai |
 | W5 | **Invoice** | a customer and a discount, then Delivered bookings are billed and Spoiled ones credited once, then an invoice is saved and exported | `invoice <customer> [loyalty\|bulk\|none] [--export file]` | Byerdikhajy |
 
 Two reports (`report`): **revenue by customer** and **cold-store priority** (in two configured scorings). W3 and W4
@@ -125,6 +121,46 @@ $ dotnet run -- status
   SH5   CityLab    Requested
 ```
 
+Dispatch and delivery, continuing from the state above (`confirm SH2`, `SH3` and `SH5` first). Real output:
+
+```text
+$ dotnet run -- dispatch SH1 V2
+SUCCESS SH1 dispatched on V2 (tier Local, 60 kg)
+$ dotnet run -- dispatch SH2 V1                      # expected failure: Frozen load, truck without a freezer
+ERROR [storage_mismatch] SH2 is Frozen and V1 has no freezer.
+$ dotnet run -- dispatch SH1 V1                      # (on a confirmed SH1) expected failure: 60 kg on a 50 kg truck
+ERROR [over_capacity] V1 carries 0 kg of 50 kg; SH1 adds 60 kg.
+$ dotnet run -- dispatch auto SH3 firstfit           # the same booking, two policies, two trucks
+SUCCESS SH3 dispatched on V3 by FirstFit (tier LongHaul, 8 kg)
+$ dotnet run -- dispatch auto SH3 bestfit            # (on a fresh state) the tightest fit
+SUCCESS SH3 dispatched on V4 by BestFit (tier LongHaul, 8 kg)
+$ dotnet run -- dispatch fleet
+Fleet load (dispatched bookings per vehicle, heaviest first, ties by id)
+Vehicle  Capacity Bookings   LoadKg
+V2            100        2       65
+V4             80        1        8
+V1             50        1        2
+V3            500        0        0
+Total                    4       75
+$ dotnet run -- deliver SH1                          # strict is the default
+SUCCESS SH1 delivered (Strict): 5 readings within 2..8 C
+$ dotnet run -- deliver SH2 strict                   # one reading of -15 C in a -25..-18 C load
+SUCCESS SH2 spoiled (Strict): reading at minute 30 is -15 C, outside -25..-18 C
+$ dotnet run -- deliver SH5 tolerant                 # two readings in a row above 8 C
+SUCCESS SH5 spoiled (Tolerant): readings from minute 15 to 30 are outside 2..8 C
+$ dotnet run -- deliver SH1                          # expected failure: already delivered
+ERROR [not_dispatched] SH1 is delivered; only a dispatched booking can be delivered.
+$ dotnet run -- deliver report
+Report: closed deliveries by storage class
+Storage   Delivered  Spoiled  Total
+Cold              1        1      2
+Frozen            0        1      1
+```
+
+The same readings give different outcomes under the two policies: on a fresh state, `deliver SH2 tolerant` ends with
+`SH2 delivered (Tolerant): 5 readings within -25..-18 C`, because the -15 C spike is a single reading. Spoiled is a
+success (the delivery was closed), so the state is saved and the invoice later credits it.
+
 A successful invoice. This is the test `InvoiceCommandSavesTheStateAndExportsTheSameLines`, whose saved state has two
 Delivered bookings and one Spoiled booking for FreshFarm:
 
@@ -182,8 +218,8 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 ```
 
 - **Domain models:** `Shipment` (validated request), `Booking` (closed state hierarchy, one case per lifecycle
-  state), `Ledger` (all bookings plus the confirmation and invoice counters), `Invoice`/`InvoiceLine`. W3 adds `Vehicle`,
-  and W4 adds `TemperatureReading`.
+  state), `Ledger` (all bookings plus the confirmation and invoice counters), `Invoice`/`InvoiceLine`. `Vehicle` (W3, validated factory `Vehicle.Create`, private constructor)
+  and `TemperatureReading` (W4, validated factory `TemperatureReading.Create`).
 - **Data flow of a state command:** `StateStore.LoadOrSeed` gives a `Result<Ledger>`. That is bound to the pure rule, which gives a
   `Result<(Ledger, message)>`, then bound to `StateStore.Save`. Only a fully successful chain writes the file.
 - **Pure vs side effects:** rules never touch `Console`, files or the clock. All I/O and every `try/catch` is in the
@@ -212,12 +248,17 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 | Curried function + 2 partial applications | `Scoring.CreateScore(10)(1)` / `(1)(10)` in the reports; `Discounts.Create(5000)(5)` = Loyalty, `(10000)(10)` = Bulk |
 | `yield return`, deferred execution, deliberate materialisation | `CsvBoundary.StreamRows` (opens nothing until enumerated) and `Materialise` (`ToArray` once); tests count opens and disposals |
 | Load JSON/CSV, save and export | `samples/*.json`/`*.csv` in; `StateStore.Save` (state) and `ReportExport.Write` (reports, invoices) out |
+| Two dispatch policies (HOF), documented difference | `DispatchPolicies.FirstFit` vs `BestFit` (`Func<IEnumerable<Vehicle>, Shipment, Option<Vehicle>>`) used by `DispatchRules.AssignAuto`: SH3 goes to V3 under FirstFit and V4 under BestFit; test `FirstFitAndBestFitChooseDifferentVehiclesForTheSameInput` |
+| Two tolerance policies (HOF), documented difference | `TolerancePolicies.Strict` vs `Tolerant` (`Func<IReadOnlyList<TemperatureReading>, StorageClass, Option<string>>`) passed to `DeliveryRules.Complete`: SH2 is Spoiled under Strict and Delivered under Tolerant; test `SameReadingsSpoiledUnderStrictDeliveredUnderTolerant` |
+| W3/W4 rule chains (Bind, Option, Require) | `DispatchRules.Assign` / `AssignAuto` (codes `missing_booking`, `not_confirmed`, `missing_vehicle`, `storage_mismatch`, `over_capacity`, `out_of_range`, `no_vehicle_fits`); `DeliveryRules.Complete` (`missing_booking`, `not_dispatched`, `missing_readings`, `unordered_readings`, with `Require` and `Map`) |
+| W3/W4 reports with GroupBy | `DispatchRules.FleetLoad` (GroupBy vehicle, Count, Sum, tie-breaker by id); `DeliveryReports.ByStorageClass` (GroupBy storage class, Count, tie-breaker by name) |
+| Lazy readings, snapshot | `Readings.Stream` (`yield return`, nothing opens until enumerated) and `Readings.Materialise` (one `ToArray`); tests `CreatingTheStreamOpensNothing`, `TheMaterialisedSnapshotIsReusedWithoutReopeningTheFile` |
 | Native C + P/Invoke used in a calculation | `NativeTier.Classify` in the priority report and the dispatch range rule; `NativeTierTests` (real call and injected failure) |
 
 ## Persistence, errors and resources
 
 - **Formats:** `samples/shipments.json` (seed), `samples/shipments.csv` (reports), `shipments.txt` and `actions.txt`
-  (W1/W2 files), and `data/state.json` (saved lifecycle). W3 and W4 add `samples/vehicles.json` and `samples/readings.csv`.
+  (W1/W2 files), and `data/state.json` (saved lifecycle). W3 and W4 read `samples/vehicles.json` and `samples/readings.csv`.
 - **Validation on load:** every saved booking is rebuilt through `Shipment.Create` and the state chain
   (`Quoted → Confirmed → Dispatched → …`), so a hand-edited state file cannot contain an impossible state. Unknown states,
   missing fields, duplicate ids or confirmation numbers, and counters lower than the data are rejected as `malformed_data` / `invalid_shipment` / `duplicate_id`.
@@ -230,7 +271,7 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 
 ## Testing
 
-`dotnet test` runs the xUnit suite (163 tests at the time of writing). The suites are:
+`dotnet test` runs the xUnit suite (238 tests at the time of writing). The suites are:
 
 | File | Covers |
 |---|---|
@@ -241,7 +282,8 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 | `NativeTierTests` | a real native call, and injected load and binding failures |
 | `StateStoreTests` | new lifecycle states, save/load round trip, seeding, malformed state, failed save, `confirm`/`status`/`reset`/`menu` commands |
 | `InvoicingTests` | curried discounts, billing and crediting once, the three failure codes, full `invoice` command with export and failures |
-| `DispatchTests`, `FleetTests` (W3, pending) / `DeliveryTests`, `ReadingsTests` (W4, pending) | added by Bekarys and Estai |
+| `DispatchTests` (24 test methods) | W3: `Vehicle.Create` and its capacity boundaries, `FleetBoundary.Load` (missing file, malformed JSON, invalid and duplicate vehicles, empty fleet), every `DispatchRules.Assign` failure code, rounding up before the native call, an injected native failure, FirstFit against BestFit, `dispatch` / `dispatch auto` / `dispatch fleet` workflows, unchanged state file on failure |
+| `DeliveryTests`, `ReadingsTests` (20 and 12 test methods) | W4: `TemperatureReading.Create`, `Readings.ParseRow` with line numbers, lazy `Stream` (nothing opens until enumerated, reader disposed, one `ToArray`), missing and malformed readings file, safe-range boundaries, Strict against Tolerant, every `DeliveryRules.Complete` failure code, `deliver` and `deliver report` commands |
 
 ## Responsibilities
 
@@ -250,12 +292,12 @@ With an empty dataset (`report samples/header-only.csv`), every report prints `n
 | Data model and parsing (A5), validated factory (A6) | `Models.cs`, `Parsing.cs` | Estai |
 | JSON boundary (A7) | `JsonBoundary.cs`, `samples/*.json` | Estai |
 | Extension method, lazy CSV, resource ownership (A8) | `Queries.cs` (`ByStorageClass`, `Require`), `CsvBoundary.cs` | Estai |
-| **W4 Delivery check (final)** | `Delivery.cs`, `Readings.cs`, `samples/readings.csv` | Estai (pending) |
+| **W4 Delivery check (final)** | `Delivery.cs` (`SafeRange`, `TolerancePolicies`, `DeliveryRules`, `DeliveryReports`, `DeliveryConsole`), `Readings.cs` (`TemperatureReading`, `Readings`), `samples/readings.csv` | Estai |
 | Pipeline stages and workflow (A5) | `Stages.cs`, `Workflow.cs` | Bekarys |
 | Booking states and safe transitions (A6) | `Booking.cs` (Requested/Quoted/Confirmed, `BookingRules`, `Ledger`) | Bekarys |
 | Result/Option and composition (A7) | `Outcomes.cs`, `ResultBookings.cs` | Bekarys |
 | Native C library and P/Invoke (A8) | `native/ccq_native.c`, `NativeTier.cs` | Bekarys |
-| **W3 Dispatch (final)** | `Dispatch.cs`, `Fleet.cs`, `samples/vehicles.json` | Bekarys (pending) |
+| **W3 Dispatch (final)** | `Dispatch.cs` (`DispatchRules`, `DispatchPolicies`, `DispatchConsole`), `Fleet.cs` (`Vehicle`, `VehicleCheck`, `FleetBoundary`), `samples/vehicles.json` | Bekarys |
 | Price policies and CLI (A5), actions file (A6), result console (A7) | `PricePolicies.cs`, `Program.cs`, `Actions.cs`, `ResultConsole.cs` | Byerdikhajy |
 | Curried scoring, reports, export (A8) | `Scoring.cs`, `Reports.cs`, `ReportConsole.cs`, `ReportExport.cs` | Byerdikhajy |
 | **Shared foundation (final)** | `Booking.cs` (Dispatched…Credited, `NextInvoice`), `StateStore.cs`, `StateConsole.cs`, `Menu.cs`, `Program.Run`, `native/ccq_native.h` | Byerdikhajy |
@@ -267,7 +309,10 @@ contribution notes are kept in [`docs/history/`](docs/history/).
 
 ## Limitations
 
-- **W3 and W4 are pending** until the teammates' pull requests are merged; until then the commands print `not implemented yet`.
+- **Fleet and readings are plain sample files:** `samples/vehicles.json` (4 vehicles) and `samples/readings.csv` are read-only inputs; there is no command to add a vehicle or a reading. `--vehicles <path>` and the `[readings]` argument point to other files.
+- **Load is counted by weight only:** `dispatch` compares kilograms and has no volume or route-time model. A booking leaves the vehicle's load when it is delivered or spoiled.
+- **Readings are not matched to the vehicle:** `deliver` uses the readings that carry the shipment id; it does not check which truck the sensor was in.
+- **Tolerant policy is fixed at 2 in a row:** `TolerancePolicies.TolerantRun` is a constant, not a command option.
 - **Windows x64 only** for the committed DLL. Another platform needs a rebuild with the same gcc command (`.so`/`.dylib`).
 - **Whole kilometres:** the native tier accepts whole kilometres from 0 to 300.
 - **Single user:** the state file assumes one user at a time (there is no locking between concurrent runs).
@@ -285,4 +330,4 @@ contribution notes are kept in [`docs/history/`](docs/history/).
 | Repository | https://github.com/berdikhajyesentay-afk/ColdChainQuotes |
 | Branch | `main` |
 | Tag | `final-submission` |
-| Commit | `<FINAL_COMMIT>`. A commit cannot contain its own hash, so the full hash of the tagged commit is recorded in the group report and in `GIT_LINK.txt` in each submission zip. Check it with `git rev-parse final-submission`. |
+| Commit | `<FINAL_COMMIT>` |
